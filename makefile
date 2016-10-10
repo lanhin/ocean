@@ -1,8 +1,8 @@
 EXE=ocean
 FC=gfortran
-FFLAGS=-cpp -ffree-form -fdefault-real-8 -g -c 
-LDFLAGS=-g
-SRC=mod_data.f90 mpdata_adiff.f90 ocean.f90 
+FFLAGS=-cpp -ffree-form -fdefault-real-8 -O2 -c
+LDFLAGS=-O2
+SRC=mod_data.f90 mpdata_adiff.f90 ocean.f90
 
 OBJ=$(patsubst %.f90,%.o,$(SRC))
 
