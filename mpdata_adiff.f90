@@ -81,11 +81,16 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
     real*8, dimension(LBi:UBi,N) :: Wm
 
     DO j=Jstr,Jend
-        k=1
+       ! Calculate C(:) and Wm(:)    --lanhin
+       ! Read Ta(::), eps, W(::), Jstr, Jend, Istr, Iend, N
+       ! Write C(:) Wm(:)
+       k=1
+       ! OpenMp here
         DO i=Istr,Iend
             C(i,k) =0.25*((Ta(i,j,k+1)-Ta(i,j,k))+(Ta(i-1,j,k+1)-Ta(i-1,j,k)))/(Ta(i-1,j,k)+Ta(i,j,k)+eps)
             Wm(i,k)=0.25*dt*(W(i-1,j,k)+W(i,j,k))
         END DO
+        ! Can use OpenMP here
         DO k=2,N-1
         DO i=Istr,Iend
             C(i,k) =0.0625*((Ta(i,j,k+1)-Ta(i,j,k))+(Ta(i,j,k)-Ta(i,j,k-1))+ &
@@ -94,11 +99,25 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
         END DO
         END DO
         k=N
+        ! OpenMp here
         DO i=Istr,Iend
             C(i,k) =0.25*  ((Ta(i,j,k)-Ta(i,j,k-1))+(Ta(i-1,j,k)-Ta(i-1,j,k-1)))/(Ta(i-1,j,k)+Ta(i,j,k)+eps)
             Wm(i,k)=0.25*dt*( W(i-1,j,k-1)+ W(i,j,k-1))
         END DO
-        
+        ! Calculate C(:) and Wm(:) end.   --lanhin
+
+        ! Calculate Ua Start
+        ! Read Ta(::), eps, dt, Huon(::), oHz(::), Hvom(::), Uind(), Dn(), Wm(:), Dm(), C(:), ND, N, Istr, Iend
+        ! Write Ua(::), Ua(::)
+        ! Write/Read (middle results):
+        !              Um, Vm,
+        !              A, B, AA, BB, AB,
+        !              X, Y, XX, YY, XY,
+        !              sig_alfa, sig_beta, sig_gama,
+        !              sig_a, sig_b, sig_c
+
+        ! Try OpenMp here, for the outer loop, to avoid massive threads clone
+        ! Can also try to exchange the order of loops, improve the space locality
         DO k=1,N
         DO i=Istr,Iend
             IF ((Ta(i-1,j,k).le.0.0).or.(Ta(i,j,k).le.0.0)) THEN
