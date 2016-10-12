@@ -34,6 +34,7 @@ program ocean
 
     write (*,*) "[VERIFY] Start verification."
     call verify_data()
+    call writeUaintoFile(UBi,UBj,N,MYDATA%Ua)    ! Output Ua to check
     write (*,*) "[VERIFY] Done!"
     call deallocate_data()
 

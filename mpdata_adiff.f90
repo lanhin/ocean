@@ -80,7 +80,12 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
     real*8, dimension(LBi:UBi,N) :: C
     real*8, dimension(LBi:UBi,N) :: Wm
 
+    !!PRIVATE(i, k, l, A, B, Um, Vm, X, Y, AA, BB, AB, XX, YY, XY, sig_alfa, sig_beta, sig_gama, sig_a, sig_b, sig_c, C, Wm)
+    
+    !$OMP PARALLEL DO DEFAULT(PRIVATE), SHARED(Istr, Iend, Jstr, Jend, oHz, Huon, Hvom, W, Ta, Uind, Dn, Dm, Ua, N, ND)
     DO j=Jstr,Jend
+!       write (*,*) "Jstr:", Jstr, "Jend:", Jend, "j:", j, "Istr:", Istr, "Iend:", Iend
+       
        ! Calculate C(:) and Wm(:)    --lanhin
        ! Read Ta(::), eps, W(::), Jstr, Jend, Istr, Iend, N
        ! Write C(:) Wm(:)
@@ -165,7 +170,8 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
         END DO
         END DO
     END DO
-
+    !$OMP END PARALLEL DO
+    
     RETURN
 END SUBROUTINE stencil 
 
@@ -203,5 +209,33 @@ END SUBROUTINE
 !
 
 #endif
+
+SUBROUTINE writeUaintoFile(INDA, INDB, INDC, Ua)
+  integer, intent(in) :: INDA, INDB, INDC
+  real*8, intent(in) :: Ua(:,:,:)
+
+  integer :: i, j, k
+  
+  open (unit=2, file="Ua.out")
+
+  
+  DO i=1,MIN(3,INDA)
+     DO j=1,MIN(64,INDB)
+        DO k=MAX(1, INDC-64),INDC
+           write (2, *) Ua(i,j,k)
+        END DO
+     END DO
+  END DO
+
+  DO i=MAX(1,INDA-3), INDA
+     DO j=1,MIN(64,INDB)
+        DO k=MAX(1, INDC-64),INDC
+           write (2, *) Ua(i,j,k)
+        END DO
+     END DO
+  END DO
+
+  close (2)
+END SUBROUTINE writeUaintoFile
 
 END MODULE mpdata_adiff
