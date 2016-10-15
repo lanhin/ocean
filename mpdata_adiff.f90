@@ -40,7 +40,7 @@ SUBROUTINE mpdata_adiff_tile (LBi, UBi, LBj, UBj, oHz, Huon, Hvom, W, Ta, Uind, 
     Jend = UBj-2 
 !
     call stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom, W, Ta, Uind, Dn, Dm, Ua)
-
+    !WRITE (*, *) "Going to return from adiff-tile"
     RETURN
 END SUBROUTINE mpdata_adiff_tile
 
@@ -80,9 +80,42 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
     real*8, dimension(LBi:UBi,N) :: C
     real*8, dimension(LBi:UBi,N) :: Wm
 
+#ifdef INNERLOOP
+    ! Preprocessing: construct the UR_LINK_META and UR_LINK
+    integer, dimension(ND) :: UR_LINK
+    integer, dimension(UBi,2) :: UR_LINK_META
+    UR_LINK = 0
+    UR_LINK_META = 0
+    
+    !call WriteOutIntArray_1D(ND, UR_LINK, "UR2__LINK")
+    !call WriteOutIntArray_2D(UBi, 2, UR_LINK_META, "UR2_L_META")
+
+    DO i=1,ND
+       IF(UR_LINK_META(Uind(i), 1).eq.0) THEN
+          UR_LINK_META(Uind(i), 1) = i    !Set head
+          UR_LINK_META(Uind(i), 2) = i    !Set tail
+       ELSE
+          UR_LINK(UR_LINK_META(Uind(i),2)) = i    !Link a new node
+          UR_LINK_META(Uind(i), 2) = i    !Set new tail
+       ENDIF
+    END DO
+
+
+    !WRITE (*, *) "Constrction End here!"
+    !call WriteOutIntArray_1D(ND, UR_LINK, "UR__LINK")
+    !call WriteOutIntArray_2D(UBi, 2, UR_LINK_META, "UR_LI_META")
+
+
+
     !!PRIVATE(i, k, l, A, B, Um, Vm, X, Y, AA, BB, AB, XX, YY, XY, sig_alfa, sig_beta, sig_gama, sig_a, sig_b, sig_c, C, Wm)
     
+    
+    !$OMP PARALLEL DO DEFAULT(PRIVATE), SHARED(Istr, Iend, Jstr, Jend, oHz, Huon, Hvom, W, Ta, Uind, Dn, Dm, Ua, N, ND)&
+    !$OMP SHARED(UR_LINK, UR_LINK_META)
+#else
     !$OMP PARALLEL DO DEFAULT(PRIVATE), SHARED(Istr, Iend, Jstr, Jend, oHz, Huon, Hvom, W, Ta, Uind, Dn, Dm, Ua, N, ND)
+#endif
+    
     DO j=Jstr,Jend
 !       write (*,*) "Jstr:", Jstr, "Jend:", Jend, "j:", j, "Istr:", Istr, "Iend:", Iend
        
@@ -124,6 +157,7 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
         ! Try OpenMp here, for the outer loop, to avoid massive threads clone
         ! Can also try to exchange the order of loops, improve the space locality
         DO k=1,N
+        !DIR$ SIMD
         DO i=Istr,Iend
             IF ((Ta(i-1,j,k).le.0.0).or.(Ta(i,j,k).le.0.0)) THEN
                 Ua(i,j,k)=0.0
@@ -160,18 +194,27 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
 !
                 Ua(i,j,k)=MIN(ABS(Ua(i,j,k)), ABS(Um)*SIGN(1.0,Ua(i,j,k)))
 
-!  Further value fixing.
+                !  Further value fixing.
+#ifndef INNERLOOP
                 DO l=1, ND
                     IF(Uind(l).eq.i) THEN
                         Ua(i,j,k)=Ua(i,j,k)+Ua(i,j,k)**Dn(l)*Um*Wm(i,k)+ABS(SIN(Dm(l))*Vm*C(i,k)*Wm(i,k))
                     ENDIF
                 END DO
+#else
+                l = UR_LINK_META(i,1)
+                DO WHILE (l .ne. 0)
+                   Ua(i,j,k)=Ua(i,j,k)+Ua(i,j,k)**Dn(l)*Um*Wm(i,k)+ABS(SIN(Dm(l))*Vm*C(i,k)*Wm(i,k))
+                   l = UR_LINK(l)
+                END DO
+#endif
             END IF
         END DO
         END DO
     END DO
     !$OMP END PARALLEL DO
-    
+
+    !WRITE (*, *) "Going to return"
     RETURN
 END SUBROUTINE stencil 
 
@@ -210,32 +253,72 @@ END SUBROUTINE
 
 #endif
 
-SUBROUTINE writeUaintoFile(INDA, INDB, INDC, Ua)
+SUBROUTINE writeUaintoFile(INDA, INDB, INDC, Ua, filename)
   integer, intent(in) :: INDA, INDB, INDC
   real*8, intent(in) :: Ua(:,:,:)
-
+  character, intent(in) :: filename*8
+  
   integer :: i, j, k
   
-  open (unit=2, file="Ua.out")
+  open(unit=2, file=filename)
 
-  
-  DO i=1,MIN(3,INDA)
-     DO j=1,MIN(64,INDB)
+  ! The first 8 lines
+  DO i=3,MIN(8,INDA)
+     DO j=3,MIN(64,INDB)
         DO k=MAX(1, INDC-64),INDC
-           write (2, *) Ua(i,j,k)
+           write(2, *) Ua(i,j,k)
         END DO
      END DO
   END DO
 
-  DO i=MAX(1,INDA-3), INDA
-     DO j=1,MIN(64,INDB)
+  ! The last 8 lines
+  DO i=MAX(1,INDA-8), INDA-2
+     DO j=3,MIN(64,INDB)
         DO k=MAX(1, INDC-64),INDC
-           write (2, *) Ua(i,j,k)
+           write(2, *) Ua(i,j,k)
         END DO
      END DO
   END DO
 
-  close (2)
+!177 format (6f21.17)
+  close(2)
 END SUBROUTINE writeUaintoFile
+
+SUBROUTINE WriteOutIntArray_1D(Udx, Uind, filename)
+  integer, intent(in) :: Udx
+  integer, intent(in) :: Uind(1:Udx)
+  character, intent(in) :: filename*10    !Output filename, no longer than 10 chars
+
+  integer :: i
+
+  open(unit=3, file=filename)
+
+  DO i=1,Udx
+     write(3, 78) i, Uind(i)
+     78 format(2i4)
+  END DO
+
+  close(3)
+END SUBROUTINE WriteOutIntArray_1D
+
+SUBROUTINE WriteOutIntArray_2D(Udx1, Udx2, META, filename)
+  integer, intent(in) :: Udx1, Udx2
+  integer, intent(in) :: META(1:Udx1, 1:Udx2)
+  character, intent(in) :: filename*10    !Output filename, no longer than 10 chars
+  integer :: i, j
+
+  open(unit=4, file=filename)
+
+  DO i=1,Udx1
+     write(4, 77) i
+     DO j=1,Udx2
+        write(4, 77) META(i, j)
+        77 format(1i4$)
+     END DO
+     write(4, *)
+  END DO
+
+  close(4)
+END SUBROUTINE WriteOutIntArray_2D
 
 END MODULE mpdata_adiff

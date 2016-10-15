@@ -14,10 +14,14 @@ program ocean
 ! *************************************************************
     write (*,*) "[INIT] Initializing data..."
     call allocate_init_data()
-
+    !call WriteOutIntArray_1D(ND, MYDATA%Uind, "Uind.out")
+    !MYDATA%Uind = 0   ! Check if this works for initlization
+    !call WriteOutIntArray_1D(ND, MYDATA%Uind, "Uind.out2")
     write (*,*) "[INIT] Done!"
     write (*,*) 
 
+    call writeUaintoFile(UBi,UBj,N,MYDATA%Ua, "Ua.initd")    ! Output Ua to check
+    
     write (*,*) "[RUN]  Start calculation..."
     call system_clock(start_time,clock_rate,clock_max)
 
@@ -34,7 +38,7 @@ program ocean
 
     write (*,*) "[VERIFY] Start verification."
     call verify_data()
-    call writeUaintoFile(UBi,UBj,N,MYDATA%Ua)    ! Output Ua to check
+    call writeUaintoFile(UBi,UBj,N,MYDATA%Ua, "Ua.check")    ! Output Ua to check
     write (*,*) "[VERIFY] Done!"
     call deallocate_data()
 
