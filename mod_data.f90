@@ -23,13 +23,13 @@ subroutine allocate_init_data()
     integer :: seed
     real*8, allocatable :: rndtmp(:)
 
-    seed = 11418
-    N = 180
-    ND = 2560
-    LBi = 1
+    seed = 35*16
+    N = 180 !300
+    ND = 2500
+    LBi = 10
     UBi = 960
-    LBj = 1
-    UBj = 1200
+    LBj = 28
+    UBj = 1200 !2016
 
     allocate (MYDATA % oHz(LBi:UBi,LBj:UBj,N))
     allocate (MYDATA % Huon(LBi:UBi,LBj:UBj,N))
@@ -80,7 +80,62 @@ subroutine flush_cache(t1)
 end subroutine
 
 subroutine verify_data()
-    write(*,*) "Would be implemented later."
+    real*8, allocatable, dimension(:,:,:) :: Ub
+    real*8 :: vmax
+    integer :: i,j,k
+    write (*,*) "Start allocate..."
+    allocate (Ub(LBi:UBi,LBj:UBj,N))
+    write (*,*) "Allocate end!"
+
+    call mpdata_adiff_tile_ver(LBi, UBi, LBj, UBj, MYDATA%oHz, MYDATA%Huon, MYDATA%Hvom, MYDATA%W, MYDATA%Ta, &
+                         & MYDATA%Uind, MYDATA%Dn, MYDATA%Dm, Ub)
+    write (*,*) "call adiff_tile_ver end!"
+    vmax = 0.0
+    do k=1, N
+    do j=LBj+2, UBj-2
+    do i=LBi+2, UBi-2
+        if(ABS(Ub(i,j,k).gt.1E-6)) THEN
+        if(ABS((MYDATA%Ua(i,j,k)-Ub(i,j,k))/Ub(i,j,k)).gt.vmax) THEN
+            vmax = (MYDATA%Ua(i,j,k)-Ub(i,j,k))/Ub(i,j,k)
+        endif
+        elseif (ABS(MYDATA%Ua(i,j,k)-Ub(i,j,k)).gt.vmax) THEN
+            vmax = Ub(i,j,k)-MYDATA%Ua(i,j,k)
+        endif
+    enddo
+    enddo
+    enddo
+    write (*,'(a, f, \)') "          Max error: ", vmax
+    if (vmax.le.1E-6) THEN
+        write (*,*) "       PASS!"
+    else
+        write (*,*) "       FAILED..."
+    endif
+    deallocate (Ub)
+end subroutine
+
+subroutine mpdata_adiff_tile_ver (LBi, UBi, LBj, UBj, oHz, Huon, Hvom, W, Ta, Uind, Dn, Dm, Ua)
+    implicit none
+    integer, intent(in) :: LBi, UBi, LBj, UBj
+    real*8, intent(in) :: oHz(LBi:,LBj:,:)
+    real*8, intent(in) :: Huon(LBi:,LBj:,:)
+    real*8, intent(in) :: Hvom(LBi:,LBj:,:)
+    real*8, intent(in) :: W(LBi:,LBj:,:)
+    real*8, intent(in) :: Ta(LBi:,LBj:,:)
+    integer, intent(in) :: Uind(:)
+    real*8, intent(in) :: Dn(:)
+    real*8, intent(in) :: Dm(:)
+
+    real*8, intent(out) :: Ua(LBi:,LBj:,:)
+
+    integer :: Istr, Iend, Jstr, Jend
+
+    Istr = LBi+2 
+    Iend = UBi-2 
+    Jstr = LBj+2 
+    Jend = UBj-2 
+    write (*,*) "Call stencil_ver..."
+    call stencil_ver (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom, W, Ta, Uind, Dn, Dm, Ua)
+    write (*,*) "Call stencil_ver end!"
 end subroutine
 
 subroutine deallocate_data()
