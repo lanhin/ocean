@@ -82,11 +82,22 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
 
 #ifdef INNERLOOP
     ! Preprocessing: construct the UR_LINK_META and UR_LINK
-    integer, dimension(ND) :: UR_LINK
     integer, dimension(UBi,2) :: UR_LINK_META
-    UR_LINK = 0
-    UR_LINK_META = 0
+    integer, dimension(ND) :: UR_LINK
+
+#ifdef LENGTHARRAY
+    integer, dimension(ND,1:UBi) :: LARRY
+    integer, dimension(UBi) :: LARRYLEN
+    integer :: LARRYidx, ll
     
+    LARRYLEN = 0
+    LARRY = 0
+#endif
+    
+    UR_LINK_META = 0
+    UR_LINK = 0
+
+    WRITE (*, *) "Constrction start!"
     !call WriteOutIntArray_1D(ND, UR_LINK, "UR2__LINK")
     !call WriteOutIntArray_2D(UBi, 2, UR_LINK_META, "UR2_L_META")
 
@@ -100,24 +111,46 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
        ENDIF
     END DO
 
+#ifdef LENGTHARRAY
+    !! For vectorize of the most inner loop
+    DO i=1,UBi
+       l = UR_LINK_META(i,1)
+       LARRYidx = 1
+       DO WHILE (l .ne. 0)
+          LARRY(LARRYidx, i) = l
+          LARRYidx = LARRYidx + 1
+          l = UR_LINK(l)
+       END DO
+       LARRYLEN(i) = LARRYidx
+    END DO
+#endif
 
-    !WRITE (*, *) "Constrction End here!"
-    !call WriteOutIntArray_1D(ND, UR_LINK, "UR__LINK")
-    !call WriteOutIntArray_2D(UBi, 2, UR_LINK_META, "UR_LI_META")
+#if 0
+    WRITE (*, *) "Constrction LARRY End here!"
+    call WriteOutIntArray_1D(ND, UR_LINK, "UR__LINK")
+    call WriteOutIntArray_2D(UBi, 2, UR_LINK_META, "UR_LI_META")
 
+    call WriteOutIntArray_1D(UBi, LARRYLEN, "LARRYLEN")
+    call WriteOutIntArray_2D(ND, UBi, LARRY, "LARRYlarry")
+#endif
 
 
     !!PRIVATE(i, k, l, A, B, Um, Vm, X, Y, AA, BB, AB, XX, YY, XY, sig_alfa, sig_beta, sig_gama, sig_a, sig_b, sig_c, C, Wm)
     
-    
+
+    write (*,*) "Start the loops..."
     !$OMP PARALLEL DO DEFAULT(PRIVATE), SHARED(Istr, Iend, Jstr, Jend, oHz, Huon, Hvom, W, Ta, Uind, Dn, Dm, Ua, N, ND)&
-    !$OMP SHARED(UR_LINK, UR_LINK_META)
+#ifdef LENGTHARRAY
+    !$OMP SHARED(UR_LINK, UR_LINK_META, LARRY, LARRYLEN)
 #else
-    !$OMP PARALLEL DO DEFAULT(PRIVATE), SHARED(Istr, Iend, Jstr, Jend, oHz, Huon, Hvom, W, Ta, Uind, Dn, Dm, Ua, N, ND)
+    !$OMP SHARED(UR_LINK, UR_LINK_META)
+#endif
+#else
+    !$OMP PARALLEL DO DEFAULT(PRIVATE), SCHEDULE(dynamic), SHARED(Istr, Iend, Jstr, Jend, oHz, Huon, Hvom, W, Ta, Uind, Dn, Dm, Ua, N, ND)
 #endif
     
     DO j=Jstr,Jend
-!       write (*,*) "Jstr:", Jstr, "Jend:", Jend, "j:", j, "Istr:", Istr, "Iend:", Iend
+       !write (*,*) "Jstr:", Jstr, "Jend:", Jend, "j:", j, "Istr:", Istr, "Iend:", Iend
        
        ! Calculate C(:) and Wm(:)    --lanhin
        ! Read Ta(::), eps, W(::), Jstr, Jend, Istr, Iend, N
@@ -198,15 +231,25 @@ SUBROUTINE stencil (Istr, Iend, Jstr, Jend, LBi, UBi, LBj, UBj, oHz, Huon, Hvom,
 #ifndef INNERLOOP
                 DO l=1, ND
                     IF(Uind(l).eq.i) THEN
-                        Ua(i,j,k)=Ua(i,j,k)+Ua(i,j,k)**Dn(l)*Um*Wm(i,k)+ABS(SIN(Dm(l))*Vm*C(i,k)*Wm(i,k))
+                       Ua(i,j,k)=Ua(i,j,k)+(ABS(Ua(i,j,k))**Dn(l)*Um*Wm(i,k)+ABS(SIN(Dm(l))*Vm*C(i,k)*Wm(i,k)))/(dt*dt)
+                       !Ua(i,j,k)=Ua(i,j,k)+Ua(i,j,k)**Dn(l)*Um*Wm(i,k)+ABS(SIN(Dm(l))*Vm*C(i,k)*Wm(i,k))
                     ENDIF
                 END DO
 #else
+#ifdef LENGTHARRAY
+                IF (LARRYLEN(i) .gt. 1) THEN
+                   DO ll=1, LARRYLEN(i)-1
+                      l = LARRY(ll,i)
+                      Ua(i,j,k)=Ua(i,j,k)+(ABS(Ua(i,j,k))**Dn(l)*Um*Wm(i,k)+ABS(SIN(Dm(l))*Vm*C(i,k)*Wm(i,k)))/(dt*dt)
+                   END DO
+                ENDIF
+#else     
                 l = UR_LINK_META(i,1)
                 DO WHILE (l .ne. 0)
-                   Ua(i,j,k)=Ua(i,j,k)+Ua(i,j,k)**Dn(l)*Um*Wm(i,k)+ABS(SIN(Dm(l))*Vm*C(i,k)*Wm(i,k))
+                   Ua(i,j,k)=Ua(i,j,k)+(ABS(Ua(i,j,k))**Dn(l)*Um*Wm(i,k)+ABS(SIN(Dm(l))*Vm*C(i,k)*Wm(i,k)))/(dt*dt)
                    l = UR_LINK(l)
                 END DO
+#endif
 #endif
             END IF
         END DO
@@ -287,7 +330,7 @@ END SUBROUTINE writeUaintoFile
 SUBROUTINE WriteOutIntArray_1D(Udx, Uind, filename)
   integer, intent(in) :: Udx
   integer, intent(in) :: Uind(1:Udx)
-  character, intent(in) :: filename*10    !Output filename, no longer than 10 chars
+  character, intent(in) :: filename*8    !Output filename, no longer than 8 chars
 
   integer :: i
 
