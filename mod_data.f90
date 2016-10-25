@@ -24,12 +24,12 @@ subroutine allocate_init_data()
     real*8, allocatable :: rndtmp(:)
 
     seed = 35*16
-    N = 180 !300
+    N = 300
     ND = 2500
     LBi = 10
     UBi = 960
     LBj = 28
-    UBj = 1200 !2016
+    UBj = 2016
 
     allocate (MYDATA % oHz(LBi:UBi,LBj:UBj,N))
     allocate (MYDATA % Huon(LBi:UBi,LBj:UBj,N))
